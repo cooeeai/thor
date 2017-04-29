@@ -5,6 +5,9 @@ import java.io.{File, FileInputStream, ByteArrayOutputStream}
 import java.net.InetSocketAddress
 import java.util.{Calendar, Date}
 
+import org.apache.http.client.methods.HttpGet
+import org.apache.http.impl.client.DefaultHttpClient
+
 import scala.collection.mutable.ArrayBuffer
 
 import com.sksamuel.scrimage.{Format, Image, ScaleMethod}
@@ -22,6 +25,8 @@ import com.typesafe.config.Config
 import org.jboss.netty.handler.codec.http._
 import org.jboss.netty.buffer.ChannelBuffers
 
+import scala.concurrent.ExecutionContext
+
 /** BaseImageService provides common functionality for requesting and serving images. */
 object BaseImageService {
 
@@ -38,6 +43,8 @@ abstract class BaseImageService(conf: Config, client: Service[Request, Response]
   protected lazy val cacheDays: Int = conf.getInt("CACHE_DURATION_DAYS")
 
   protected lazy val log = Logger.get(this.getClass)
+
+  import ExecutionContext.Implicits.global
 
   def buildResponse(req: Request, image: Image, format: Format, compression: Int = 98): Response = {
     val buffer = new ByteArrayOutputStream()
@@ -65,21 +72,58 @@ abstract class BaseImageService(conf: Config, client: Service[Request, Response]
     res
   }
 
+//  def requestImage(url: String): Future[Option[Image]] = {
+//    val req = Request("/" + url)
+//    req.userAgent = "Thor-Imageserver"
+//    req.host = mediaAddr
+//    req.accept = "image/*"
+//    client(req) map {
+//      res => res.status match {
+//        case Status.Ok => {
+//          Some(res.withInputStream[Image](inputStream => Image.fromStream(inputStream)))
+//        }
+//        case _ => {
+//          log.error(s"Could not fetch: $url (${res.status})")
+//          None
+//        }
+//      }
+//    }
+//  }
+
+//  val urlPattern = """http://(.*?)/(.*)""".r
+
+//  def requestImage(url: String): Future[Option[Image]] = {
+//    url match {
+//      case urlPattern(host, path) =>
+//        log.debug("host: {}, path: {}", host, path)
+//        val req = Request("/" + path)
+//        req.host = host
+//        req.accept = "image/*"
+//        client(req) map {
+//          res => res.status match {
+//            case Status.Ok => {
+//              Some(res.withInputStream[Image](inputStream => Image.fromStream(inputStream)))
+//            }
+//            case _ => {
+//              log.error("Could not fetch: {} ({})", url, res.status)
+//              None
+//            }
+//          }
+//        }
+//
+//      case _ =>
+//        log.error("No valid URL")
+//        Future.None
+//    }
+//  }
+
   def requestImage(url: String): Future[Option[Image]] = {
-    val req = Request("/" + url)
-    req.userAgent = "Thor-Imageserver"
-    req.host = mediaAddr
-    req.accept = "image/*"
-    client(req) map {
-      res => res.status match {
-        case Status.Ok => {
-          Some(res.withInputStream[Image](inputStream => Image.fromStream(inputStream)))
-        }
-        case _ => {
-          log.error(s"Could not fetch: $url (${res.status})")
-          None
-        }
-      }
+    Future {
+      val httpClient = new DefaultHttpClient()
+      val get = new HttpGet(url)
+      val response = httpClient.execute(get)
+      val inputStream = response.getEntity.getContent
+      Some(Image.fromStream(inputStream))
     }
   }
 
